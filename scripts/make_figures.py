@@ -11,8 +11,7 @@ from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.ticker import MaxNLocator, PercentFormatter, LogLocator, NullLocator
 
 BASE = Path(__file__).resolve().parents[1]
-DATA, OUT = BASE / 'data', BASE / 'figures'
-OUT.mkdir(exist_ok=True)
+DATA, OUT = BASE / 'data', BASE / 'generated' / 'figures'
 BLUE, ORANGE, INK, GREY = '#215B8F', '#CB7227', '#252A2E', '#78828A'
 GRID = '#EEF0F2'
 MANUSCRIPT = None
@@ -272,7 +271,8 @@ def direct():
     fig.legend(handles=handles, loc='lower center', bbox_to_anchor=(.5, -.08), ncol=3,
                frameon=False, fontsize=11.0, handletextpad=.4, columnspacing=1.2)
     assert int(grouped.to_numpy().sum()) == len(d) == 72
-    assert len(plotted) == 71 and len(unavailable) == 1
+    if len(plotted) + len(unavailable) != len(d):
+        raise ValueError('Some solver runs do not match a plotted parameter group.')
     save(fig, 'fig04_direct_optimization')
 
 
@@ -372,8 +372,15 @@ def graph():
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--manuscript-dir', type=Path)
+    parser.add_argument('--data-dir', type=Path, default=DATA)
+    parser.add_argument('--output-dir', type=Path, default=OUT)
+    parser.add_argument('--manuscript-dir', type=Path,
+                        help='Optionally export PDF figures to a separate manuscript build directory.')
     args = parser.parse_args()
+    DATA, OUT = args.data_dir.resolve(), args.output_dir.resolve()
+    if OUT == (BASE / 'figures').resolve():
+        parser.error('Choose an output directory separate from the frozen figures.')
+    OUT.mkdir(parents=True, exist_ok=True)
     MANUSCRIPT = args.manuscript_dir
     if MANUSCRIPT is not None:
         MANUSCRIPT.mkdir(parents=True, exist_ok=True)

@@ -147,5 +147,9 @@ def run(output):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--output-dir', type=Path, default=Path(__file__).resolve().parents[1] / 'data')
-    run(parser.parse_args().output_dir)
+    base = Path(__file__).resolve().parents[1]
+    parser.add_argument('--output-dir', type=Path, default=base / 'generated' / 'data')
+    output = parser.parse_args().output_dir.resolve()
+    if output == (base / 'data').resolve():
+        parser.error('Choose an output directory separate from the frozen data.')
+    run(output)

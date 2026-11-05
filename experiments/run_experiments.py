@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import csv
 import importlib.metadata
 import json
@@ -15,8 +16,7 @@ import numpy as np
 from scipy import optimize
 import sympy as sp
 
-DATA = HERE.parent / "data"
-DATA.mkdir(parents=True, exist_ok=True)
+DATA = HERE.parent / "generated" / "data"
 SEED = 20261030
 RNG = np.random.default_rng(SEED)
 FEAS_TOL = 2e-7
@@ -490,7 +490,48 @@ def environment():
                 deterministic_inputs=True, timing_is_machine_dependent=True)
 
 
+def figure_inputs():
+    """Export the analytical curves and representative optimizer matrices."""
+    epsilons = np.geomspace(1e-3, 0.98, 401)
+    emit("figure_energy_frontier.csv", (
+        dict(epsilon=e, alpha=1/e, kappa=k, saving_even=1-e*k,
+             T_3_minimum_rows=2*k+1/e, T_3_four_rows_upper_bound=2*k+2)
+        for e, k in zip(epsilons, (3-epsilons)/(1+epsilons))))
+
+    lower, transition, upper = 49/256, 327/512, 169/256
+    thresholds = np.unique(np.r_[np.linspace(lower, transition, 201),
+                                 np.linspace(transition, upper, 401), 0.65])
+    rows = []
+    for g in thresholds:
+        if g <= transition:
+            alpha = kappa = g-lower
+        else:
+            alpha = (1024*g*g-4304*g+1849)/(4*(256*g-433))
+            kappa = (65536*g*g-135680*g+48301)/(256*(256*g-265))
+        rows.append(dict(gamma=g, alpha=alpha, kappa=kappa))
+    emit("figure_graph_curves.csv", rows)
+
+    rng = np.random.default_rng(SEED)
+    for m, first in ((6, 1), (5, 3)):
+        even = m-m%2
+        factor = optimal_factor(0.1, m, J=-jstd(even))
+        canonical = np.roll(np.eye(m), 1, axis=0) if m%2 else np.eye(m)
+        rotated, _ = np.linalg.qr(rng.standard_normal((m, m)))
+        for index, transform in enumerate((canonical, rotated), first):
+            W = np.vstack([transform @ factor[:m], transform @ factor[m:]])
+            H = W @ W.T
+            np.savetxt(DATA / f"figure_optimizer_H_{index}.csv", H, delimiter=",",
+                       header=",".join(map(str, range(2*m))), comments="")
+
+
 def main():
+    global DATA
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output-dir", type=Path, default=DATA)
+    DATA = parser.parse_args().output_dir.resolve()
+    if DATA == (HERE.parent / "data").resolve():
+        parser.error("Choose an output directory separate from the frozen data.")
+    DATA.mkdir(parents=True, exist_ok=True)
     begin = time.perf_counter()
     summary = dict(seed=SEED, data_type="deterministic mathematical test families; no empirical sensor measurements",
                    distance_scope="Nuclear-norm distances between Gram matrices H. No gauge-free entrywise stability of measurement factors R is asserted.")
@@ -502,6 +543,7 @@ def main():
         summary[name] = func()
         summary[name]["seconds"] = time.perf_counter() - start
         print(f"Completed {name}: {summary[name]['seconds']:.2f}s", flush=True)
+    figure_inputs()
     validation = dict(
         construction_trace_matches=summary["closed_form"]["max_trace_error"] < 1e-9,
         construction_original_psd=summary["closed_form"]["min_original_eig"] > -1e-9,
